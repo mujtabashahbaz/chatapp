@@ -16,13 +16,15 @@
         .username { font-weight: bold; margin-right: 0.5rem; }
         #username-form { display: flex; }
         #chat-interface { display: none; }
+        #error-message { color: red; text-align: center; padding: 10px; }
     </style>
 </head>
 <body>
     <div id="username-form">
         <input id="username-input" autocomplete="off" placeholder="Choose a username" />
-        <button>Set Username</button>
+        <button type="button" id="set-username-btn">Set Username</button>
     </div>
+    <div id="error-message"></div>
     <div id="chat-interface">
         <ul id="messages"></ul>
         <form id="form" action="">
@@ -42,17 +44,28 @@
 
         const usernameForm = document.getElementById('username-form');
         const usernameInput = document.getElementById('username-input');
+        const setUsernameBtn = document.getElementById('set-username-btn');
         const chatInterface = document.getElementById('chat-interface');
         const form = document.getElementById('form');
         const input = document.getElementById('input');
         const messages = document.getElementById('messages');
+        const errorMessage = document.getElementById('error-message');
 
-        usernameForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            if (usernameInput.value) {
-                socket.emit('set username', usernameInput.value);
+        setUsernameBtn.addEventListener('click', setUsername);
+        usernameInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                setUsername();
             }
         });
+
+        function setUsername() {
+            if (usernameInput.value.trim()) {
+                socket.emit('set username', usernameInput.value.trim());
+            } else {
+                showError('Please enter a username.');
+            }
+        }
 
         form.addEventListener('submit', (e) => {
             e.preventDefault();
@@ -75,12 +88,13 @@
         socket.on('username set', (name) => {
             username = name;
             usernameForm.style.display = 'none';
+            errorMessage.style.display = 'none';
             chatInterface.style.display = 'block';
             addMessage('System', `You are now known as ${username}`);
         });
 
         socket.on('username taken', () => {
-            alert('Username is already taken. Please choose another.');
+            showError('Username is already taken. Please choose another.');
         });
 
         socket.on('user joined', (user) => {
@@ -109,6 +123,11 @@
             item.appendChild(document.createTextNode(' ' + msg));
             messages.appendChild(item);
             window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
         }
     </script>
 </body>
