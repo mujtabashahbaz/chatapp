@@ -17,6 +17,9 @@
         .user-message { background-color: #e6f2ff; }
         .ai-message { background-color: #f0f0f0; }
         .admin-message { background-color: #ffe6e6; }
+        .user-item { cursor: pointer; padding: 5px; }
+        .user-item:hover { background-color: #f0f0f0; }
+        .selected-user { font-weight: bold; background-color: #e6e6e6; }
     </style>
 </head>
 <body>
@@ -57,6 +60,9 @@
             roleSelection.style.display = 'none';
             chatInterface.style.display = 'flex';
             userList.style.display = isAdmin ? 'block' : 'none';
+            if (isAdmin) {
+                addMessage('System', 'You are now in admin mode. Select a user to start chatting.');
+            }
         }
 
         sendBtn.addEventListener('click', sendMessage);
@@ -66,10 +72,10 @@
 
         function sendMessage() {
             if (input.value) {
-                if (isAdmin) {
+                if (isAdmin && currentUserId) {
                     socket.emit('admin message', { userId: currentUserId, message: input.value });
                     addMessage('You (Admin)', input.value);
-                } else {
+                } else if (!isAdmin) {
                     socket.emit('user message', { userId: currentUserId, message: input.value });
                     addMessage('You', input.value);
                 }
@@ -99,9 +105,19 @@
         });
 
         if (isAdmin) {
+            socket.on('user list', (users) => {
+                users.forEach(addUserToList);
+            });
+
+            socket.on('new user', (userId) => {
+                addUserToList(userId);
+            });
+
             socket.on('user message', (data) => {
-                addUserToList(data.userId);
-                addMessage(`User ${data.userId}`, data.message, 'user-message');
+                if (currentUserId === data.userId) {
+                    addMessage(`User ${data.userId}`, data.message, 'user-message');
+                }
+                highlightUser(data.userId);
             });
 
             socket.on('user disconnected', (data) => {
@@ -113,6 +129,7 @@
             if (!document.getElementById(userId)) {
                 const userElement = document.createElement('div');
                 userElement.id = userId;
+                userElement.className = 'user-item';
                 userElement.textContent = `User ${userId}`;
                 userElement.addEventListener('click', () => selectUser(userId));
                 userList.appendChild(userElement);
@@ -126,10 +143,17 @@
 
         function selectUser(userId) {
             currentUserId = userId;
-            document.querySelectorAll('#user-list div').forEach(el => el.style.fontWeight = 'normal');
-            document.getElementById(userId).style.fontWeight = 'bold';
+            document.querySelectorAll('.user-item').forEach(el => el.classList.remove('selected-user'));
+            document.getElementById(userId).classList.add('selected-user');
             messages.innerHTML = '';
             addMessage('System', `Now chatting with User ${userId}`);
+        }
+
+        function highlightUser(userId) {
+            const userElement = document.getElementById(userId);
+            if (userElement && !userElement.classList.contains('selected-user')) {
+                userElement.style.fontWeight = 'bold';
+            }
         }
     </script>
 </body>

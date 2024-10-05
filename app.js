@@ -1,10 +1,13 @@
+require('dotenv').config();
 const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const path = require('path');
+const OpenAI = require('openai');
 
 const PORT = process.env.PORT || 3000;
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -12,47 +15,42 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Simple in-memory knowledge base
+// Simple in-memory knowledge base (in a real app, this would be in a database)
 const knowledgeBase = [
-  { question: "What are your opening hours?", answer: "We are open from 9 AM to 5 PM, Monday to Friday." },
-  { question: "Do you offer parking?", answer: "Yes, we have free parking available for all visitors." },
-  { question: "How do I book an appointment?", answer: "You can book an appointment by calling our reception at 555-0123 or using our online booking system." }
+  "Our company hours are 9 AM to 5 PM, Monday to Friday.",
+  "We offer free parking for all visitors.",
+  "Appointments can be booked by calling 555-0123 or using our online booking system.",
+  "Our address is 123 Business Street, Cityville, State 12345.",
+  "We offer a wide range of services including consultations, product demonstrations, and technical support."
 ];
 
-// Simple AI function to find the best matching answer
-function findAnswer(question) {
-  const bestMatch = knowledgeBase.reduce((best, current) => {
-    const similarity = stringSimilarity(question.toLowerCase(), current.question.toLowerCase());
-    return similarity > best.similarity ? { similarity, answer: current.answer } : best;
-  }, { similarity: 0, answer: null });
+async function generateAIResponse(question) {
+  const prompt = `
+  Knowledge Base:
+  ${knowledgeBase.join('\n')}
 
-  return bestMatch.similarity > 0.6 ? bestMatch.answer : "I'm sorry, I don't have enough information to answer that question. Let me connect you with an admin who can help you better.";
-}
+  User Question: ${question}
 
-// Simple string similarity function (you might want to use a more sophisticated one)
-function stringSimilarity(str1, str2) {
-  const len = Math.max(str1.length, str2.length);
-  return (len - levenshteinDistance(str1, str2)) / len;
-}
+  Please answer the user's question based on the information in the knowledge base. If the answer isn't in the knowledge base, politely say you don't have that information and offer to connect them with a human representative.
 
-function levenshteinDistance(str1, str2) {
-  const m = str1.length, n = str2.length;
-  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] = Math.min(
-        dp[i-1][j-1] + (str1[i-1] !== str2[j-1]),
-        dp[i-1][j] + 1,
-        dp[i][j-1] + 1
-      );
-    }
+  AI Assistant:`;
+
+  try {
+    const response = await openai.completions.create({
+      model: "text-davinci-002",
+      prompt: prompt,
+      max_tokens: 150,
+      temperature: 0.7,
+    });
+
+    return response.choices[0].text.trim();
+  } catch (error) {
+    console.error('Error calling OpenAI API:', error);
+    return "I'm sorry, I'm having trouble processing your request right now. Let me connect you with a human representative who can assist you better.";
   }
-  return dp[m][n];
 }
 
-const adminSocket = null;
+let adminSocket = null;
 const userSockets = new Map();
 
 io.on('connection', (socket) => {
@@ -62,18 +60,24 @@ io.on('connection', (socket) => {
     if (role === 'admin') {
       adminSocket = socket;
       console.log('Admin connected');
+      // Send list of current users to admin
+      adminSocket.emit('user list', Array.from(userSockets.keys()));
     } else {
       const userId = 'user_' + Math.random().toString(36).substr(2, 9);
       userSockets.set(userId, socket);
       socket.userId = userId;
       console.log('User connected:', userId);
       socket.emit('user id', userId);
+      // Notify admin of new user
+      if (adminSocket) {
+        adminSocket.emit('new user', userId);
+      }
     }
   });
 
-  socket.on('user message', (data) => {
+  socket.on('user message', async (data) => {
     console.log('User message:', data);
-    const aiResponse = findAnswer(data.message);
+    const aiResponse = await generateAIResponse(data.message);
     socket.emit('ai response', { message: aiResponse });
     if (adminSocket) {
       adminSocket.emit('user message', { userId: data.userId, message: data.message });
