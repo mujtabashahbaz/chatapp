@@ -3,131 +3,133 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebSocket Chat App</title>
+    <title>AI-powered Front Desk Chat</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding-bottom: 3rem; }
-        #messages { list-style-type: none; margin: 0; padding: 0; }
-        #messages li { padding: 0.5rem 1rem; }
-        #messages li:nth-child(odd) { background: #efefef; }
-        #form, #username-form { background: rgba(0, 0, 0, 0.15); padding: 0.25rem; position: fixed; bottom: 0; left: 0; right: 0; display: flex; height: 3rem; box-sizing: border-box; backdrop-filter: blur(10px); }
-        #input, #username-input { border: none; padding: 0 1rem; flex-grow: 1; border-radius: 2rem; margin: 0.25rem; }
-        #input:focus, #username-input:focus { outline: none; }
-        #form > button, #username-form > button { background: #333; border: none; padding: 0 1rem; margin: 0.25rem; border-radius: 3px; outline: none; color: #fff; }
-        .username { font-weight: bold; margin-right: 0.5rem; }
-        #username-form { display: flex; }
-        #chat-interface { display: none; }
-        #error-message { color: red; text-align: center; padding: 10px; }
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; }
+        #role-selection { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; }
+        #chat-interface { display: none; flex-direction: column; width: 100%; }
+        #chat-container { display: flex; flex-grow: 1; }
+        #user-list { width: 200px; border-right: 1px solid #ccc; overflow-y: auto; }
+        #messages { flex-grow: 1; overflow-y: auto; padding: 10px; }
+        #input-area { display: flex; padding: 10px; border-top: 1px solid #ccc; }
+        #input { flex-grow: 1; margin-right: 10px; }
+        .message { margin-bottom: 10px; padding: 5px; border-radius: 5px; }
+        .user-message { background-color: #e6f2ff; }
+        .ai-message { background-color: #f0f0f0; }
+        .admin-message { background-color: #ffe6e6; }
     </style>
 </head>
 <body>
-    <div id="username-form">
-        <input id="username-input" autocomplete="off" placeholder="Choose a username" />
-        <button type="button" id="set-username-btn">Set Username</button>
+    <div id="role-selection">
+        <h2>Select Your Role</h2>
+        <button id="user-btn">User</button>
+        <button id="admin-btn">Admin</button>
     </div>
-    <div id="error-message"></div>
     <div id="chat-interface">
-        <ul id="messages"></ul>
-        <form id="form" action="">
-            <input id="input" autocomplete="off" /><button>Send</button>
-        </form>
+        <div id="chat-container">
+            <div id="user-list"></div>
+            <div id="messages"></div>
+        </div>
+        <div id="input-area">
+            <input id="input" type="text" placeholder="Type your message...">
+            <button id="send-btn">Send</button>
+        </div>
     </div>
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        const socket = io({
-            transports: ['websocket'],
-            upgrade: false,
-            reconnectionAttempts: 5,
-            timeout: 10000
-        });
+        const socket = io();
+        let isAdmin = false;
+        let currentUserId = null;
 
-        let username = '';
-
-        const usernameForm = document.getElementById('username-form');
-        const usernameInput = document.getElementById('username-input');
-        const setUsernameBtn = document.getElementById('set-username-btn');
+        const roleSelection = document.getElementById('role-selection');
         const chatInterface = document.getElementById('chat-interface');
-        const form = document.getElementById('form');
-        const input = document.getElementById('input');
+        const userList = document.getElementById('user-list');
         const messages = document.getElementById('messages');
-        const errorMessage = document.getElementById('error-message');
+        const input = document.getElementById('input');
+        const sendBtn = document.getElementById('send-btn');
 
-        setUsernameBtn.addEventListener('click', setUsername);
-        usernameInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                setUsername();
-            }
-        });
+        document.getElementById('user-btn').addEventListener('click', () => setRole('user'));
+        document.getElementById('admin-btn').addEventListener('click', () => setRole('admin'));
 
-        function setUsername() {
-            if (usernameInput.value.trim()) {
-                socket.emit('set username', usernameInput.value.trim());
-            } else {
-                showError('Please enter a username.');
-            }
+        function setRole(role) {
+            isAdmin = (role === 'admin');
+            socket.emit('set role', role);
+            roleSelection.style.display = 'none';
+            chatInterface.style.display = 'flex';
+            userList.style.display = isAdmin ? 'block' : 'none';
         }
 
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
+        sendBtn.addEventListener('click', sendMessage);
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        function sendMessage() {
             if (input.value) {
-                socket.emit('chat message', input.value);
+                if (isAdmin) {
+                    socket.emit('admin message', { userId: currentUserId, message: input.value });
+                    addMessage('You (Admin)', input.value);
+                } else {
+                    socket.emit('user message', { userId: currentUserId, message: input.value });
+                    addMessage('You', input.value);
+                }
                 input.value = '';
             }
-        });
-
-        socket.on('connect', () => {
-            console.log('Connected to server');
-            addMessage('System', 'Connected to server');
-        });
-
-        socket.on('disconnect', () => {
-            console.log('Disconnected from server');
-            addMessage('System', 'Disconnected from server');
-        });
-
-        socket.on('username set', (name) => {
-            username = name;
-            usernameForm.style.display = 'none';
-            errorMessage.style.display = 'none';
-            chatInterface.style.display = 'block';
-            addMessage('System', `You are now known as ${username}`);
-        });
-
-        socket.on('username taken', () => {
-            showError('Username is already taken. Please choose another.');
-        });
-
-        socket.on('user joined', (user) => {
-            addMessage('System', `${user} has joined the chat`);
-        });
-
-        socket.on('user left', (user) => {
-            addMessage('System', `${user} has left the chat`);
-        });
-
-        socket.on('chat message', (data) => {
-            addMessage(data.user, data.message);
-        });
-
-        socket.on('connect_error', (error) => {
-            console.error('Connection error:', error);
-            addMessage('System', 'Connection error: ' + error.message);
-        });
-
-        function addMessage(from, msg) {
-            const item = document.createElement('li');
-            const usernameSpan = document.createElement('span');
-            usernameSpan.classList.add('username');
-            usernameSpan.textContent = from + ':';
-            item.appendChild(usernameSpan);
-            item.appendChild(document.createTextNode(' ' + msg));
-            messages.appendChild(item);
-            window.scrollTo(0, document.body.scrollHeight);
         }
 
-        function showError(message) {
-            errorMessage.textContent = message;
-            errorMessage.style.display = 'block';
+        function addMessage(sender, message, messageClass = '') {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', messageClass);
+            messageElement.textContent = `${sender}: ${message}`;
+            messages.appendChild(messageElement);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        socket.on('user id', (userId) => {
+            currentUserId = userId;
+            addMessage('System', 'Connected to the chat. How can we help you today?');
+        });
+
+        socket.on('ai response', (data) => {
+            addMessage('AI Assistant', data.message, 'ai-message');
+        });
+
+        socket.on('admin response', (data) => {
+            addMessage('Admin', data.message, 'admin-message');
+        });
+
+        if (isAdmin) {
+            socket.on('user message', (data) => {
+                addUserToList(data.userId);
+                addMessage(`User ${data.userId}`, data.message, 'user-message');
+            });
+
+            socket.on('user disconnected', (data) => {
+                removeUserFromList(data.userId);
+            });
+        }
+
+        function addUserToList(userId) {
+            if (!document.getElementById(userId)) {
+                const userElement = document.createElement('div');
+                userElement.id = userId;
+                userElement.textContent = `User ${userId}`;
+                userElement.addEventListener('click', () => selectUser(userId));
+                userList.appendChild(userElement);
+            }
+        }
+
+        function removeUserFromList(userId) {
+            const userElement = document.getElementById(userId);
+            if (userElement) userElement.remove();
+        }
+
+        function selectUser(userId) {
+            currentUserId = userId;
+            document.querySelectorAll('#user-list div').forEach(el => el.style.fontWeight = 'normal');
+            document.getElementById(userId).style.fontWeight = 'bold';
+            messages.innerHTML = '';
+            addMessage('System', `Now chatting with User ${userId}`);
         }
     </script>
 </body>
