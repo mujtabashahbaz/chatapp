@@ -5,14 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebSocket Chat App</title>
     <style>
-        /* ... (previous styles remain the same) ... */
+        body { font-family: Arial, sans-serif; margin: 0; padding-bottom: 3rem; }
+        #messages { list-style-type: none; margin: 0; padding: 0; }
+        #messages li { padding: 0.5rem 1rem; }
+        #messages li:nth-child(odd) { background: #efefef; }
+        #form, #username-form { background: rgba(0, 0, 0, 0.15); padding: 0.25rem; position: fixed; bottom: 0; left: 0; right: 0; display: flex; height: 3rem; box-sizing: border-box; backdrop-filter: blur(10px); }
+        #input, #username-input { border: none; padding: 0 1rem; flex-grow: 1; border-radius: 2rem; margin: 0.25rem; }
+        #input:focus, #username-input:focus { outline: none; }
+        #form > button, #username-form > button { background: #333; border: none; padding: 0 1rem; margin: 0.25rem; border-radius: 3px; outline: none; color: #fff; }
+        .username { font-weight: bold; margin-right: 0.5rem; }
+        #username-form { display: flex; }
+        #chat-interface { display: none; }
     </style>
 </head>
 <body>
-    <ul id="messages"></ul>
-    <form id="form" action="">
-        <input id="input" autocomplete="off" /><button>Send</button>
-    </form>
+    <div id="username-form">
+        <input id="username-input" autocomplete="off" placeholder="Choose a username" />
+        <button>Set Username</button>
+    </div>
+    <div id="chat-interface">
+        <ul id="messages"></ul>
+        <form id="form" action="">
+            <input id="input" autocomplete="off" /><button>Send</button>
+        </form>
+    </div>
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io({
@@ -22,9 +38,21 @@
             timeout: 10000
         });
 
+        let username = '';
+
+        const usernameForm = document.getElementById('username-form');
+        const usernameInput = document.getElementById('username-input');
+        const chatInterface = document.getElementById('chat-interface');
         const form = document.getElementById('form');
         const input = document.getElementById('input');
         const messages = document.getElementById('messages');
+
+        usernameForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (usernameInput.value) {
+                socket.emit('set username', usernameInput.value);
+            }
+        });
 
         form.addEventListener('submit', (e) => {
             e.preventDefault();
@@ -44,8 +72,27 @@
             addMessage('System', 'Disconnected from server');
         });
 
-        socket.on('chat message', (msg) => {
-            addMessage('User', msg);
+        socket.on('username set', (name) => {
+            username = name;
+            usernameForm.style.display = 'none';
+            chatInterface.style.display = 'block';
+            addMessage('System', `You are now known as ${username}`);
+        });
+
+        socket.on('username taken', () => {
+            alert('Username is already taken. Please choose another.');
+        });
+
+        socket.on('user joined', (user) => {
+            addMessage('System', `${user} has joined the chat`);
+        });
+
+        socket.on('user left', (user) => {
+            addMessage('System', `${user} has left the chat`);
+        });
+
+        socket.on('chat message', (data) => {
+            addMessage(data.user, data.message);
         });
 
         socket.on('connect_error', (error) => {
@@ -55,7 +102,11 @@
 
         function addMessage(from, msg) {
             const item = document.createElement('li');
-            item.textContent = `${from}: ${msg}`;
+            const usernameSpan = document.createElement('span');
+            usernameSpan.classList.add('username');
+            usernameSpan.textContent = from + ':';
+            item.appendChild(usernameSpan);
+            item.appendChild(document.createTextNode(' ' + msg));
             messages.appendChild(item);
             window.scrollTo(0, document.body.scrollHeight);
         }

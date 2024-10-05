@@ -12,15 +12,34 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+const users = new Set();
+
 io.on('connection', (socket) => {
   console.log('A user connected');
 
+  socket.on('set username', (username) => {
+    if (users.has(username)) {
+      socket.emit('username taken');
+    } else {
+      socket.username = username;
+      users.add(username);
+      socket.emit('username set', username);
+      io.emit('user joined', username);
+    }
+  });
+
   socket.on('chat message', (msg) => {
-    console.log('Message received:', msg);
-    io.emit('chat message', msg);
+    if (socket.username) {
+      console.log('Message received:', msg);
+      io.emit('chat message', { user: socket.username, message: msg });
+    }
   });
 
   socket.on('disconnect', () => {
+    if (socket.username) {
+      users.delete(socket.username);
+      io.emit('user left', socket.username);
+    }
     console.log('User disconnected');
   });
 
